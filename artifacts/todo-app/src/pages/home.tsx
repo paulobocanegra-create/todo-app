@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -8,7 +8,8 @@ import {
   Plus, 
   Trash2, 
   ListTodo,
-  BookOpen
+  BookOpen,
+  Pencil
 } from "lucide-react";
 import {
   useListTodos,
@@ -28,6 +29,9 @@ export default function Home() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   const { data: todos = [], isLoading } = useListTodos(
     filter !== "all" ? { status: filter } : undefined,
@@ -88,6 +92,44 @@ export default function Home() {
         }
       }
     );
+  };
+
+  const startEditing = (id: number, title: string) => {
+    setEditingId(id);
+    setEditingTitle(title);
+  };
+
+  useEffect(() => {
+    if (editingId !== null && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
+  const handleEditSubmit = (id: number) => {
+    const trimmed = editingTitle.trim();
+    if (!trimmed) {
+      setEditingId(null);
+      return;
+    }
+    updateTodo.mutate(
+      { id, data: { title: trimmed } },
+      {
+        onSuccess: () => {
+          setEditingId(null);
+          queryClient.invalidateQueries({ queryKey: getListTodosQueryKey() });
+        }
+      }
+    );
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent, id: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleEditSubmit(id);
+    } else if (e.key === "Escape") {
+      setEditingId(null);
+    }
   };
 
   return (
@@ -209,23 +251,47 @@ export default function Home() {
                     >
                       <Check size={14} strokeWidth={3} className={todo.completed ? "opacity-100" : "opacity-0"} />
                     </button>
-                    <div className="flex flex-col min-w-0">
-                      <span className={`text-lg transition-all duration-300 truncate ${
-                        todo.completed ? "text-muted-foreground line-through decoration-muted-foreground/30" : "text-foreground"
-                      }`}>
-                        {todo.title}
-                      </span>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      {editingId === todo.id ? (
+                        <input
+                          ref={editInputRef}
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onBlur={() => handleEditSubmit(todo.id)}
+                          onKeyDown={(e) => handleEditKeyDown(e, todo.id)}
+                          className="text-lg bg-transparent border-b-2 border-primary outline-none py-0.5 text-foreground w-full"
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={() => startEditing(todo.id, todo.title)}
+                          className={`text-lg transition-all duration-300 truncate cursor-text ${
+                            todo.completed ? "text-muted-foreground line-through decoration-muted-foreground/30" : "text-foreground"
+                          }`}
+                        >
+                          {todo.title}
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground/60 mt-0.5">
                         {format(new Date(todo.createdAt), "MMM d, yyyy")}
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(todo.id)}
-                    className="flex-shrink-0 text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all duration-200 p-2"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {editingId !== todo.id && (
+                      <button
+                        onClick={() => startEditing(todo.id, todo.title)}
+                        className="flex-shrink-0 text-muted-foreground/40 hover:text-primary opacity-0 group-hover:opacity-100 transition-all duration-200 p-2"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(todo.id)}
+                      className="flex-shrink-0 text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all duration-200 p-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </motion.div>
               ))}
             </AnimatePresence>
